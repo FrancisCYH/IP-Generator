@@ -152,7 +152,7 @@ Based on the 4Kb `RAMB4_Sx` primitive. Up to 16 primitives can be combined in pa
 | 32Kb | 8×4096, 16×2048, 32×1024, 64×512, 128×256 |
 | 64Kb | 16×4096, 32×2048, 64×1024, 128×512, 256×256 |
 
-### Dual-Port (110 configurations)
+### Dual-Port (75 configurations)
 
 Symmetric and asymmetric dual-port are supported; total capacity of Port A must equal Port B. See `_VALID_DUAL_PORT` in `test_ram.py` for the complete list.
 
@@ -233,4 +233,4 @@ MIT License
 
 ## Author
 
-UFDE+ Team
+[@FrancisCYH](https://github.com/FrancisCYH)
