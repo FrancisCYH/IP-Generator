@@ -1,8 +1,6 @@
 # IP-Generator
 
-IP-Generator is a companion toolset for **UFDE+** (Universal FPGA Design Environment). It generates Verilog IP cores — primarily **Block RAM (BRAM)** and **Phase-Locked Loop (PLL)** — from high-level descriptions, which UFDE+ then instantiates in your design.
-
-> **For most users, only the IP generation features are needed.** The synthesis and verification flow described at the end of this document is optional and intended for developers who want to validate generated IPs against the FDP3P7 FPGA backend.
+IP-Generator is a companion toolset for **UFDE+**. It generates Verilog IP cores — primarily **Block RAM (BRAM)** and **Phase-Locked Loop (PLL)** — from high-level descriptions, which UFDE+ then instantiates in your design.
 
 ---
 
@@ -12,7 +10,8 @@ IP-Generator is a companion toolset for **UFDE+** (Universal FPGA Design Environ
 |-----------|-------|--------|
 | **BRAM IP** | MIF file (memory initialization) | `test.v` — synthesizable Verilog RAM module |
 | **PLL IP** | Divide ratio & gate count | `PLL_<divide>_<gates>.v` — clock multiplier module |
-| **Image → MIF** | PNG / JPG / BMP | `*.mif` — GraphicLCD initialization file (128×64) |
+
+> **Image → MIF** is a helper utility that produces initialization files for the BRAM generator. It converts PNG / JPG / BMP into the `*.mif` format consumed by `ip_main.py bram`.
 
 The generators are used by UFDE's graphical IP Catalog. You can also run them standalone from the command line.
 
@@ -27,31 +26,16 @@ IP-Generator/
 │
 ├── ip_main.py              # Unified CLI entry (bram / pll sub-commands)
 ├── bram_generator.py       # BRAM generator engine
+├── img2mif.py              # Image → MIF converter (feeds BRAM generator)
 ├── pll_generator.py        # PLL generator engine
-├── img2mif.py              # Image → GraphicLCD MIF converter
 │
 ├── templates/              # Jinja2 Verilog templates
 │   ├── bram_template.j2
 │   └── pll_template.j2
 │
 ├── ip_generator.spec       # PyInstaller spec for ip_generator.exe
-├── img2mif.spec            # PyInstaller spec for img2mif.exe
-│
-│  === Optional: Validation & Synthesis Flow ===
-│
-├── test_ram.py             # Automated test-bench generator (all BRAM configs)
-├── templates_test/         # Test-bench / wrapper / MIF templates
-├── scripts/
-│   └── preprocess_netlist.ps1
-│
-├── run_flow.bat            # Full FPGA flow: syn → map → pack → place → route → bit
-├── run_all.bat
-├── run_sim_quick.bat
-├── run_sim_stage.bat
-└── run_all_sim_stages.bat
+└── img2mif.spec            # PyInstaller spec for img2mif.exe
 ```
-
-> The synthesis flow scripts expect a backend toolchain in a `bin/` directory. See [Optional: Obtaining the Backend Toolchain](#optional-obtaining-the-backend-toolchain) if you need to run physical validation.
 
 ---
 
@@ -62,7 +46,7 @@ IP-Generator/
 - **jinja2**, **Pillow**
 
 ```bash
-pip install pyinstaller jinja2 Pillow
+$ pip install pyinstaller jinja2 Pillow
 ```
 
 ---
@@ -73,10 +57,10 @@ UFDE calls two bundled executables. Build them with PyInstaller using the provid
 
 ```bash
 # 1. Unified IP generator (BRAM + PLL)
-pyinstaller ip_generator.spec
+$ pyinstaller ip_generator.spec
 
 # 2. Image → MIF converter
-pyinstaller img2mif.spec
+$ pyinstaller img2mif.spec
 ```
 
 After building you will find:
@@ -100,19 +84,73 @@ You do not need UFDE to use the generators — they work perfectly from the comm
 ### BRAM from MIF
 
 ```bash
-python ip_main.py bram input.mif --output bram.v
+$ python ip_main.py bram input.mif --output bram.v
 ```
 
 Supported MIF parameters: `WIDTH=`, `DEPTH=`, `WIDTHA=`, `DEPTHA=`, `WIDTHB=`, `DEPTHB=`, `ADDRESS_RADIX=`, `DATA_RADIX=`. Single-port and dual-port modes are both supported.
 
-### PLL
+**Single-port example**
+
+```
+DEPTH = 256;           -- memory depth (number of addresses)
+WIDTH = 8;             -- data width in bits
+ADDRESS_RADIX = DEC;   -- address radix (HEX/DEC/BIN/OCT/UNS)
+DATA_RADIX = HEX;      -- data radix (HEX/DEC/BIN/OCT/UNS)
+CONTENT BEGIN
+    0 : 00;            -- data at address 0
+    1 : 0F;            -- data at address 1
+    [2..9] : FF;       -- addresses 2 through 9
+    10 : A5;           -- data at address 10
+    [11..255] : 00;    -- remaining addresses filled with 00
+END;
+```
+
+**Dual-port example**
+
+```
+DEPTHA = 256;          -- port A memory depth (number of addresses)
+WIDTHA = 8;            -- port A data width in bits
+DEPTHB = 128;          -- port B memory depth (number of addresses)
+WIDTHB = 16;           -- port B data width in bits
+ADDRESS_RADIX = DEC;   -- address radix (HEX/DEC/BIN/OCT/UNS)
+DATA_RADIX = HEX;      -- data radix (HEX/DEC/BIN/OCT/UNS)
+CONTENT BEGIN
+    0 : 00;            -- data at address 0
+    1 : 0F;            -- data at address 1
+    [2..9] : FF;       -- addresses 2 through 9
+    10 : A5;           -- data at address 10
+    [11..255] : 00;    -- remaining addresses filled with 00
+END;
+```
+
+#### Preparing a MIF from an image
+
+If your BRAM will store graphic data, use `img2mif.py` to create the initialization file first:
+
+```bash
+# Convert a picture to GraphicLCD MIF (128×64, 8-column vertical strip)
+$ python img2mif.py image.png -o output.mif
+
+# With preview
+$ python img2mif.py image.png -o output.mif -p preview.png
+
+# Invert colours
+$ python img2mif.py image.png -o output.mif --invert
+
+# Built-in test patterns
+$ python img2mif.py -t checker -o checker.mif -p preview.png
+```
+
+Then pass the resulting `*.mif` to `ip_main.py bram` as shown above.
+
+### PLL (limited testing)
 
 ```bash
 # Single configuration
-python ip_main.py pll --divide 2 --gates 30 --output PLL_2_30.v
+$ python ip_main.py pll --divide 2 --gates 30 --output PLL_2_30.v
 
 # All combinations (4 divide values × 2 gate counts = 8 files)
-python ip_main.py pll --all --output-dir ./generated
+$ python ip_main.py pll --all --output-dir ./generated
 ```
 
 | Parameter | Values | Description |
@@ -120,21 +158,7 @@ python ip_main.py pll --all --output-dir ./generated
 | `divide` | 2, 4, 8, 16 | Clock divide ratio |
 | `gates` | 30, 50 | 30 = 30W (DLL primitive), 50 = 50W (DCM primitive) |
 
-### Image → MIF
 
-```bash
-# Convert a picture to GraphicLCD MIF (128×64, 8-column vertical strip)
-python img2mif.py image.png -o output.mif
-
-# With preview
-python img2mif.py image.png -o output.mif -p preview.png
-
-# Invert colours
-python img2mif.py image.png -o output.mif --invert
-
-# Built-in test patterns
-python img2mif.py -t checker -o checker.mif -p preview.png
-```
 
 ---
 
@@ -154,76 +178,13 @@ Based on the 4Kb `RAMB4_Sx` primitive. Up to 16 primitives can be combined in pa
 
 ### Dual-Port (75 configurations)
 
-Symmetric and asymmetric dual-port are supported; total capacity of Port A must equal Port B. See `_VALID_DUAL_PORT` in `test_ram.py` for the complete list.
+Symmetric and asymmetric dual-port are supported; total capacity of Port A must equal Port B.
 
 ---
 
-## Optional: Validation & Backend Synthesis
+## Contributing
 
-The following sections are **only for developers** who want to verify generated IPs against the FDP3P7 physical backend or run regression tests.
-
-### Automated Test Generation
-
-```bash
-python test_ram.py
-```
-
-This creates the full matrix of BRAM configurations under `test/`, each containing:
-- `test.mif` — initialization data
-- `test.v` — generated BRAM IP
-- `top.v` — wrapper module
-- `tb_test.sv` — SystemVerilog test-bench
-- `top_cons.xml` — pin constraints
-
-### FPGA Synthesis Flow
-
-```bash
-# Single configuration
-run_flow.bat test\16x1024
-
-# Batch all configurations
-run_all.bat test
-```
-
-### Simulation
-
-```bash
-# RTL only
-run_sim_quick.bat test\16x1024
-
-# Post-synthesis stages
-run_sim_stage.bat test\16x1024 rtl
-run_sim_stage.bat test\16x1024 map
-run_sim_stage.bat test\16x1024 pack
-run_sim_stage.bat test\16x1024 route
-```
-
----
-
-## Optional: Obtaining the Backend Toolchain
-
-If you run the validation flow, the scripts expect a `bin/` directory containing:
-
-```
-bin/
-├── yosys.exe          # Synthesis (Yosys open-source project)
-├── yosys-abc.exe      # Yosys ABC integration
-├── import.exe         # Verilog → XML (FDE-Source)
-├── map.exe            # Technology mapping (FDE-Source)
-├── pack.exe           # Cluster packing (FDE-Source)
-├── place.exe          # Physical placement (FDE-Source)
-├── route.exe          # Signal routing (FDE-Source)
-└── bitgen.exe         # Bitstream generation (FDE-Source)
-```
-
-These binaries are **not** included in this repository. Obtain them in one of two ways:
-
-1. **Build from Yosys + FDE-Source**
-   - `yosys.exe` / `yosys-abc.exe` — build or download from the [YosysHQ/yosys](https://github.com/YosysHQ/yosys) project.
-   - `import.exe`, `map.exe`, `pack.exe`, `place.exe`, `route.exe`, `bitgen.exe` — build from the `FDE-Source` repository.
-
-2. **Copy from an existing UFDE+ installation**
-   - If you have UFDE+ installed, copy the toolchain binaries from its installation directory into `bin/`.
+To add a new IP generator or modify the template engine, see [`docs/EXTENDING_IP.md`](docs/EXTENDING_IP.md).
 
 ---
 
